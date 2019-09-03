@@ -1,0 +1,1384 @@
+Monopoly Code
+By: Casey Freimund, Felipe Pincheira-Berthelon, and Eagan Norman
+
+```{r}
+library(ggplot2)
+suppressMessages(library(dplyr))
+library(magrittr)
+set.seed(1)
+```
+
+
+# Spaces/Pieces/Variables
+```{r}
+spaces=c("Go","Mediterranean","Community Chest","Baltic","Income Tax","Reading RR","Oriental","Chance","Vermont","Connecticut","Jail","St. Charles","Electric Company","States","Virginia","Pennsylvania RR","St. James","Community Chest","Tennessee","New York","Free Parking","Kentucky","Chance","Indiana","Illinois","B&O RR","Atlantic","Ventnor","Water Works","Marvin Gardens","Go To Jail","Pacific","North Carolina","Community Chest","Pennsylvania","Short Line","Chance","Park","Luxury Tax","Boardwalk")
+
+estates=c("Go","Brown","Community Chest","Brown","Income Tax","RR","Light Blue","Chance","Light Blue","Light Blue","Jail","Pink","Utility","Pink","Pink","RR","Orange","Community Chest","Orange","Orange","Free Parking","Red","Chance","Red","Red","RR","Yellow","Yellow","Utility","Yellow","Go To Jail","Green","Green","Community Chest","Green","RR","Chance","Blue","Luxury Tax","Blue")
+
+currentSpot=1
+money=1500
+inJail=0
+jailRounds=0
+com.jailFree = FALSE
+chance.jailFree=FALSE
+rolls=0
+lands=0
+freeParking=0
+
+#Creates a data frame of the spaces/estates and lands to keep track of how many times a space gets landed on
+squares=data.frame(spaces,estates,lands)
+#Creates a copy of the squares data frame that will keep a running total of how many times a space gets landed on through 'x' amount of games played.
+spaceMaster=squares
+
+shoe=data.frame(currentSpot,inJail,jailRounds, com.jailFree, chance.jailFree, money,rolls)
+boat=shoe
+car=shoe
+dog=shoe
+shoe$name <- "shoe"
+boat$name <- "boat"
+car$name <- "car"
+dog$name <- "dog"
+
+incorporateJail <- FALSE
+incorporateCards <- FALSE
+incorporateMoney <- FALSE
+incorporateFreeParking <- FALSE
+playToWin=FALSE
+
+```
+
+##Initializing Cards
+
+##Chance
+```{r}
+comChest.cards=c("Go","BankError","DoctorFee","StockSale","JailFree","GoJail","GrandOpera","HolidayFundMature","TaxRefund","Birthday","LifeInsMature","HospitalFee","SchoolFee","Recieve25","StRepairs","BeautyCont","Inherit100")
+
+#Creates a data frame of the Community Chest Deck and sorts the cards in random order, then arranges them by position.
+comDeck=data.frame(comChest.cards,position=sample(1:17))
+comDeck=comDeck%>%
+  arrange(position)
+
+chance.cards=c("JailFree","Illinois","St.Charles","CloseUtility","CloseRR","CloseRR","BankPays50","Go","Back3","GoJail","GeneralRepairs","PayPoorTax","ReadingRR","Boardwalk","ElectedChairman","BuildLoanMature","WonCrossword")
+
+#Creates a data frame of the Chance Deck and sorts the cards in random order, then arranges them by position.
+chanceDeck=data.frame(chance.cards,position=sample(1:17))
+chanceDeck=chanceDeck%>%
+  arrange(position)
+
+#A function that takes in the player profile, a card string that depends on whatever card was at the top of the Chance Deck, and both card decks. Depending on what card the  player drew, an action will take place. The function outputs a list of the player profile, and both decks.
+chance <- function(player, cardString,chanceDeck,comDeck){
+  if(cardString == "JailFree"){
+    
+    #Change boolean for possessing get out of jail free card to true
+    player$chance.jailFree <- TRUE
+    
+  }else if(cardString == "Illinois"){
+    
+    #Change location to Illinois Avenue
+    player$currentSpot <- 25
+    player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+  
+  }else if(cardString == "St.Charles"){
+    
+    #Change location to St. Charles Place
+    player$currentSpot <- 12
+    player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+    
+  }else if(cardString == "CloseUtility"){
+    
+    #Change location to nearest utility going forward
+    #If owned, roll dice, and pay owner 10x amount rolled
+    
+    if(player$currentSpot > 13 && player$currentSpot < 29){
+      
+      player$currentSpot <- 29
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }else{
+      
+      player$currentSpot <- 13
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }
+    
+  }else if(cardString == "Close RR"){
+    
+    #Change location to nearest railroad going forward
+    #If owned, pay owner twice the rent
+    
+    if(player$currentSpot < 6 | player$currentSpot > 36){
+      
+      player$currentSpot <- 6
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }else if(player$currentSpot < 16 && player$currentSpot > 6){
+      
+      player$currentSpot <- 16
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }else if(player$currentSpot < 26 && player$currentSpot > 16){
+      
+      player$currentSpot <- 26
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }else if(player$currentSpot < 36 && player$currentSpot > 26){
+      
+      player$currentSpot <- 36
+      player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+      
+    }
+    
+  }else if(cardString == "BankPays50"){
+    
+    #Increase Money by $50
+    
+    player$money <- player$money + 50
+    
+  }else if(cardString == "Go"){
+    
+    #Change location to Go
+    player$currentSpot <- 1
+    
+    
+  }else if(cardString == "Back3"){
+    
+    #Move location back 3
+    
+    player$currentSpot <- player$currentSpot - 3
+    player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+    
+  }else if(cardString == "GoJail"){
+    
+    #Change location to Jail
+    #Change jailed boolean to true
+    if(player$com.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(player$chance.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+    else{
+      player$currentSpot <- 11
+      player$inJail <- 1
+    }
+    
+  }else if(cardString == "GeneralRepairs"){
+    
+    #Decrease Money by $25 for each house and $100 for each hotel
+    
+  }else if(cardString == "PayPoorTax"){
+    
+    #Decrease money by $15
+    
+    player$money <- player$money - 15
+    
+  }else if(cardString == "ReadingRR"){
+    
+    #Change Location to Reading Railroad
+    #If past Reading Railroad, increase money by $200
+    
+    if(player$currentSpot > 6){
+      
+      player$money <- player$money 
+      
+    }
+    
+    player$currentSpot <- 6
+    player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+    
+  }else if(cardString == "Boardwalk"){
+    
+    #Change Location to Boardwalk (impossible to pass go on your way from chance to boardwalk)
+    
+    player$currentSpot <- 40
+    player=spaceAction(player,freeParking,chanceDeck,comDeck)[[1]]
+    
+  }else if(cardString == "ElectedChairman"){
+    
+    #Decrease money by $50 for each player
+    #Increase all other players' money by $50 each
+    
+    player$money <- player$money - 150
+    
+    if(player$name == "boat"){
+      
+      car$money <- car$money + 50
+      dog$money <- dog$money + 50
+      shoe$money <- shoe$money + 50
+      
+    }else if(player$name == "car"){
+      
+      boat$money <- boat$money + 50
+      dog$money <- dog$money + 50
+      shoe$money <- shoe$money + 50
+      
+    }else if(player$name == "dog"){
+      
+      boat$money <- boat$money + 50
+      car$money <- car$money + 50
+      shoe$money <- shoe$money + 50
+      
+    }else if(player$name == "shoe"){
+      
+      boat$money <- boat$money + 50
+      car$money <- car$money + 50
+      dog$money <- dog$money + 50
+      
+    }
+  }else if(cardString == "BuildLoanMature"){
+    
+    #Increase money by $150
+    
+    player$money <- player$money + 150
+    
+  }else if(cardString == "WonCrossword"){
+    
+    #Increase money by $100
+    
+    player$money <- player$money + 100
+    
+  }
+  return(list(player,chanceDeck,comDeck))
+}
+```
+##Community Chest
+```{r}
+#A function that takes in the player profile, a card string that depends on whatever card was at the top of the Community Chest Deck, and both card decks. Depending on what card the  player drew, an action will take place. The function outputs a list of the player profile, and both decks.
+comchest <- function(player, cardString,chanceDeck,comDeck){
+  if(cardString == "JailFree"){
+    #Change boolean for possessing get out of jail free card to true
+    player$com.jailFree <- TRUE
+    
+  }
+  
+#Advance to GO and collect $200  
+  else if(cardString == "Go"){
+    player$currentSpot <- 1
+  }
+  
+#Collect $200, BankError in favor
+  else if(cardString == "BankError"){
+    player$money <- player$money + 200
+  }
+  
+##lose $50 (DoctorFee, Hospital Fee, schoolfee)
+  else if(cardString == "DoctorFee" | cardString == "HospitalFee" | cardString == "SchoolFee"){
+    player$money <- player$money - 50
+  }
+  
+#Gain $50 (Stock Sale)
+  else if(cardString == "StockSale" ){
+    player$money <- player$money + 50
+  }
+  
+#Collect $20 (Tax Refund)
+  else if(cardString == "TaxRefund"){
+    player$money <- player$money + 20
+  }
+  
+#Collect 100 (HolidayFund, LifeIns, Inherit 100)  
+  else if(cardString == "HolidayFundMature" | cardString == "LifeInsMature" | cardString == "Inherit100"){
+    
+    player$money <- player$money + 100
+  }
+  
+#Go to Jail
+  else if(cardString == "GoJail"){
+ 
+    if(player$com.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(player$chance.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+    else{
+      player$currentSpot <- 11
+      player$inJail <- 1
+    }
+  }
+  
+#Collect $25
+  else if(cardString == "Recieve25"){
+    player$money <- player$money + 25
+  }
+  
+#Collect $10 (Beauty Contest)  
+  else if(cardString == "BeautyCont"){
+    player$money <- player$money +10
+  }
+  
+##Collect $50 from each player (GrandOpera)  
+  else if(cardString == "GrandOpera"){
+    
+    player$money <- player$money + 150
+    
+    if(player$name == "boat"){
+      
+      car$money <- car$money - 50
+      dog$money <- dog$money - 50
+      shoe$money <- shoe$money - 50
+      
+    }else if(player$name == "car"){
+      
+      boat$money <- boat$money - 50
+      dog$money <- dog$money - 50
+      shoe$money <- shoe$money - 50
+      
+    }else if(player$name == "dog"){
+      
+      boat$money <- boat$money - 50
+      car$money <- car$money - 50
+      shoe$money <- shoe$money - 50
+      
+    }else if(player$name == "shoe"){
+      
+      boat$money <- boat$money - 50
+      car$money <- car$money - 50
+      dog$money <- dog$money - 50
+      
+    }
+  }
+  
+#Collect $10 from each player (Birthday)
+  else if(cardString == "Birthday"){
+    
+    player$money <- player$money + 30
+    
+    if(player$name == "boat"){
+      
+      car$money <- car$money - 10
+      dog$money <- dog$money - 10
+      shoe$money <- shoe$money - 10
+      
+    }else if(player$name == "car"){
+      
+      boat$money <- boat$money - 10
+      dog$money <- dog$money - 10
+      shoe$money <- shoe$money - 10
+      
+    }else if(player$name == "dog"){
+      
+      boat$money <- boat$money - 10
+      car$money <- car$money - 10
+      shoe$money <- shoe$money - 10
+      
+    }else if(player$name == "shoe"){
+      
+      boat$money <- boat$money - 10
+      car$money <- car$money - 10
+      dog$money <- dog$money - 10
+      
+    }
+  }
+  
+###StRepairs (Nothing yet)
+  else if(cardString == "StRepairs"){
+    ###We havent incorporated properties yet
+  }
+  return(list(player,chanceDeck,comDeck))
+}
+```
+## Draw Cards
+```{r message=FALSE}
+###Drawing Cards for Chance and Community
+
+#A function that takes in a 1 or a 2 depending on which space a player landed in. If a player lands in 1, they will draw a card from the Community Chest. If a player lands on 2, they will draw a card from the Chance Deck. The function outputs the respective deck the player drew from and a string that represents the card the player drew.
+draw.card <- function(xx){
+  
+###Communtiy Chest Cards
+  #Check position and how many cards are in deck
+  if(xx == 1 & length(comDeck$comChest.cards) == 17){
+    
+    #Saves Top card to be used in Community Chest Function
+    card=comDeck[1,1]
+    
+    #Checks if the first card in the deck is Jail Free
+    if(comDeck$comChest.cards[1] == "JailFree"){
+      
+    #Create a temporary deck and store info from original deck minus the first card
+    n.comDeck <- comDeck[-1,]
+    
+    #Deck is now the old deck minus the first card
+    comDeck <- n.comDeck 
+  
+    #The positions need to be updated, so subtact 1 from every position
+    comDeck$position <- comDeck$position + c(rep(-1, 16))
+    return(list(comDeck,card))}
+    
+  #Checking to see if the first card isn't Jail Free
+  if(!comDeck$comChest.cards[1]== "JailFree"){
+  
+  #Saves Top card to be used in Community Chest Function
+  card=comDeck[1,1]
+    
+  #Store temporary deck info      
+  n.comDeck <- comDeck[-1,] 
+  
+  #Deck is now the old deck with the first element added last
+  comDeck <- n.comDeck %>%
+  rbind(comDeck[1,])
+  
+  #update positions by subtracting 1 from all cards except the last since it has value of 1
+  comDeck$position <- comDeck$position + c(rep(-1, 16), 16)
+  return(list(comDeck,card))}
+  
+  }
+  ###length of 16 means the Jail Free card was taken out
+  ###Process is the same as above but with 16 cards
+  if(xx == 1 && length(comDeck$comChest.cards) == 16){
+  
+  #Saves Top card to be used in Community Chest Function
+  card=comDeck[1,1]
+          
+  n.comDeck <- comDeck[-1,]  
+  comDeck <- n.comDeck %>%
+  rbind(comDeck[1,])
+  
+  comDeck$position <- comDeck$position + c(rep(-1, 15), 15)    
+    
+  return(list(comDeck,card))
+  }
+
+###Chance     
+  if(xx == 2 & length(chanceDeck$chance.cards) == 17){
+    if(chanceDeck$chance.cards[1] == "JailFree"){
+      
+    #Saves Top card to be used in Chance Function
+    card=chanceDeck[1,1]
+  
+    n.chanceDeck <- chanceDeck[-1,]  
+    chanceDeck <- n.chanceDeck 
+  
+    chanceDeck$position <- chanceDeck$position + c(rep(-1, 16))
+    return(list(chanceDeck,card))}
+  
+  if(!chanceDeck$chance.cards[1]== "JailFree"){
+  
+  card=chanceDeck[1,1]    
+  
+  n.chanceDeck <- chanceDeck[-1,]  
+  chanceDeck <- n.chanceDeck %>%
+  rbind(chanceDeck[1,])
+  
+  chanceDeck$position <- chanceDeck$position + c(rep(-1, 16), 16)
+  return(list(chanceDeck,card))}
+  
+  }
+  ###length of 16 means the Jail Free card was taken out
+  if(xx == 2 & length(chanceDeck$chance.cards) == 16){
+  card=chanceDeck[1,1]        
+  n.chanceDeck <- chanceDeck[-1,]  
+  chanceDeck <- n.chanceDeck %>%
+  rbind(chanceDeck[1,])
+  
+  chanceDeck$position <- chanceDeck$position + c(rep(-1, 15), 15)    
+    
+  return(list(chanceDeck,card))
+    
+  }
+}
+```
+
+## Initializing spaceAction Function
+```{r}
+#Function that takes in a player profile, the free parking square, and both card decks. Depending on if a player lands on a spot that requires an action, the function will run that action, if we are incorporating those rules. The function returns a list of the player profile, the free parking space, and both decks.
+spaceAction <- function(player,freeParking,chanceDeck,comDeck){
+  #Community Chest
+  if(player$currentSpot == 3 | player$currentSpot == 18 | player$currentSpot == 34){
+    if(incorporateCards){
+      
+      draw=draw.card(xx=1)
+      comDeck=draw[[1]]
+      card=draw[[2]]
+      
+      draw2=comchest(player,card,chanceDeck,comDeck)
+      player=draw2[[1]]
+      chanceDeck=draw2[[2]]
+      comDeck=draw2[[3]]
+    }
+    
+  }
+  #Income Tax
+  else if(player$currentSpot == 5){
+    
+    if(incorporateMoney){
+      
+      player$money <- player$money - 200
+      if(incorporateFreeParking){
+        freeParking=freeParking+200
+      }
+      
+    }
+    
+  }
+  #Chance
+  else if(player$currentSpot == 8 | player$currentSpot == 23 | player$currentSpot == 37){
+    
+    if(incorporateCards){
+      
+      draw=draw.card(xx=2)
+      comDeck=draw[[1]]
+      card=draw[[2]]
+      
+      draw2=comchest(player,card,chanceDeck,comDeck)
+      player=draw2[[1]]
+      chanceDeck=draw2[[2]]
+      comDeck=draw2[[3]]
+      
+    }
+    
+  }
+  #Free Parking
+  else if(player$currentSpot == 21){
+    
+    if(incorporateFreeParking){
+      player$money <- player$money + round((freeParking/2))
+      freeParking=0
+    }
+    
+  }
+  #Go To Jail
+  else if(player$currentSpot == 31){
+    
+    if(incorporateJail){
+      
+      if(player$com.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(player$chance.jailFree==TRUE){
+        player$currentSpot=11
+        player$inJail=0
+        player$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+      else{
+        player$currentSpot = 11
+        player$inJail = 1
+      }
+    }
+    
+  }
+  #Luxury Tax
+  else if(player$currentSpot == 39){
+    
+    if(incorporateMoney){
+      
+      player$money <- player$money - 100
+      if(incorporateFreeParking){
+        freeParking=freeParking+100
+      }
+    }
+  }
+  return(list(player,freeParking,chanceDeck,comDeck))
+}
+```
+
+# Simple Move and Roll Function
+```{r}
+#Functoin that chooses 2 random numbers 1-6, simulates a roll of 2 die.
+roll=function(){sample(1:6,2,replace = TRUE)}
+
+#Takes in a player data frame and a vector 'dice' which contains 2 integers (1 for each die rolled) and moves the player around the board, if they pass go they collect $200. It returns the player profile
+move=function(player,dice){
+  current=player$currentSpot
+  rll=dice[1]+dice[2]
+  new.spot=current+rll
+  
+  if(new.spot>40){
+    new.spot=new.spot-40
+  }
+  player$currentSpot=new.spot
+  return(player)
+}
+
+#Take in the player data frame and the game board data frame and keeps track of how many times a spot on the board was landed on, returns the gameboard dataframe.
+space.counter=function(player,df){
+  new.loc=player$currentSpot
+  df[new.loc,"lands"]=df[new.loc,"lands"]+1
+  return(df)
+}
+```
+
+## Simple Moving Pieces
+```{r}
+#This section simulates a simple game mode where players simply roll 2 die once, move their piece, and then their turn ends. The code repeats until 10000 rounds have been played. It then saves the totals for how many times a space was landed in the spaceMaster data frame, and runs a new game. After the new game is ran, it adds those totals to our spaceMaster data frame
+games=0
+repeat{
+  if(games==10){break}
+  
+  squares$lands=0
+  boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+  car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+  dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+  shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+  game.round=0
+  
+  repeat {
+    if (game.round == 10000) {
+      break
+    }
+    
+    dice = roll()
+    boat = move(boat, dice)
+    squares = space.counter(boat, squares)
+    dice = roll()
+    car = move(car, dice)
+    squares = space.counter(car, squares)
+    dice = roll()
+    dog = move(dog, dice)
+    squares = space.counter(dog, squares)
+    dice = roll()
+    shoe = move(shoe, dice)
+    squares = space.counter(shoe, squares)
+    
+    game.round = game.round + 1
+  }
+  spaceMaster$lands=spaceMaster$lands+squares$lands
+  games=games+1
+}
+```
+
+## Visualization for First Game
+```{r}
+#COLORS PROPORTIONS
+total.lands=sum(spaceMaster$lands)
+
+colorProp=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+
+#PROPERTY PROPORTIONS
+propertyProp=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+#COLORS GRAPH
+color.visual=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+color.visual$estates=factor(color.visual$estates, levels = color.visual$estates)
+
+ggplot(color.visual,aes(x=estates,y=total))+
+  geom_segment(aes(x=estates,y=0,xend=estates,yend=total))+
+  geom_point()+coord_flip()+labs(x="Colors Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Color", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")
+
+#PROPERTIES GRAPH
+prop.visual=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+prop.visual$spaces=factor(prop.visual$spaces, levels=prop.visual$spaces)
+
+ggplot(prop.visual,aes(x=spaces,y=total))+
+  geom_segment(aes(x=spaces,y=0,xend=spaces,yend=total),color=ifelse(prop.visual$spaces%in%c("Community Chest","Chance"),"red","Black"),size=ifelse(prop.visual$spaces %in% c("Community Chest","Chance"),1.3,0.7))+
+  geom_point(color=ifelse(prop.visual$spaces%in%c("Community Chest","Chance"),"red","Black"),size=ifelse(prop.visual$spaces %in% c("Community Chest","Chance"),3,1))+coord_flip()+labs(x="Property Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Property", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")
+```
+
+
+# Complex Movement
+
+## Jail and Doubles Functions
+```{r}
+#Takes in dice vector and returns 1 if player rolls a double and 0 if player does not.
+dub.check=function(dice){
+  if(dice[1]==dice[2]){
+    return(1)
+  }
+  return(0)
+}
+
+#Takes in player data frame,dice vector, and free parking space and moves player around the board while taking into consideration the rules of rolling doubles 1-3 times, if a player is in 'jail', and getting out of jail. It returns a list of the player profile and free parking space
+moveW.Jail = function(player, dice,freeParking) {
+  dub = dub.check(dice)
+  
+  #Player in Jail
+  if (player$inJail==1) {
+    if (dub == 0 & player$jailRounds < 3) {
+      player$jailRounds = player$jailRounds + 1
+      return(list(player,freeParking))
+    }
+    else if (dub == 0 & player$jailRounds == 3) {
+      player$jailRounds = 0
+      player$inJail=0
+      player = move(player, dice)
+      if(incorporateMoney){
+        player$money=player$money-50
+        if(incorporateFreeParking){
+          freeParking=freeParking+50
+        }
+      }
+      return(list(player,freeParking))
+    }
+    else{
+      player$jailRounds = 0
+      player$inJail=0
+      player = move(player, dice)
+      return(list(player,freeParking))
+    }
+  }
+  else{
+  player = move(player, dice)
+  return(list(player,freeParking))
+  }
+}
+
+```
+
+## Gameboard Reset
+```{r}
+#RESETS GAME BOARD
+squares$lands=0
+spaceMaster$lands=0
+games=0
+boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+```
+
+## Complex Gameplay Function
+```{r}
+#Checks how many players have gone broke. If a player's money is less than or equal 0, variable broke adds 1 to itself and returns how many players have gone broke.
+brokeCheck=function(boat,car,dog,shoe){
+  broke=0
+  if(boat$money<=0){broke=broke+1}
+  if(car$money<=0){broke=broke+1}
+  if(dog$money<=0){broke=broke+1}
+  if(shoe$money<=0){broke=broke+1}
+  return(broke)
+}
+
+#Temporarily holds the current position of a player after they have moved to a spot. Within our gameplay function, we use this to check if a players current position has changed, if they landed on an action space (chance, com. chest, go to jail, ex.). If their position does change, we take note of their new position in our squares data frame.
+didMove=0
+
+#Takes in the squares dataframe and simulates a game of monopoly depending on what rules are being intialized. The function keeps track of how many times a player lands on each space, according to the rules that are being played, and returns the lands counter in the squares data frame.
+gamePlay = function(squares,boat,car,dog,shoe){
+  game.round=0
+  repeat {
+    #Stops the game if 3 players have gone broke, ie a player has one.
+    if(playToWin==TRUE){
+      broke=brokeCheck(boat,car,dog,shoe)
+      if(broke==3){
+        break
+      }
+    }
+    #Stops the game if the players play 10000 rounds. 
+    else if(playToWin==FALSE){
+      if (game.round == 10000){
+        break
+      }
+    }
+    
+    #BOAT PLAYER
+    if(boat$money>0){
+    repeat {
+      dice = roll()
+      dub = dub.check(dice)
+      boat$rolls = boat$rolls + 1
+      
+      if (dub == 0) {
+        boat = moveW.Jail(boat, dice,freeParking)[[1]]
+        didMove=boat$currentSpot
+        squares=space.counter(boat,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(boat, dice,freeParking)[[2]]
+        }
+        boat=spaceAction(boat,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(boat,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=boat$currentSpot){
+          squares = space.counter(boat, squares)
+        }
+        break
+      }
+      if (boat$rolls == 3 &
+          dub == 1) {
+        if (boat$com.jailFree == TRUE) {
+          boat$currentSpot = 11
+          boat$inJail = 0
+          boat$com.jailFree = FALSE
+          comDeck = add_row(comDeck, comChest.cards = "jailFree", position =17)
+        }
+        else if (boat$chance.jailFree == TRUE) {
+          boat$currentSpot = 11
+          boat$inJail = 0
+          boat$chance.jailFree = FALSE
+          chanceDeck = add_row(chance, chance.cards = "jailFree", position =17)
+        }
+        else{
+          boat$inJail = 1
+          boat$currentSpot = 11
+          squares = space.counter(boat, squares)
+        }
+        break
+      }
+      else if (boat$rolls == 3 & dub == 0) {
+        boat = moveW.Jail(boat, dice,freeParking)[[1]]
+        didMove=boat$currentSpot
+        squares=space.counter(boat,squares)
+        if(incorporateMoney){
+          freeParking=moveW.Jail(boat, dice,freeParking)[[2]]
+        }
+        boat=spaceAction(boat,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(boat,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=boat$currentSpot){
+          squares = space.counter(boat, squares)
+        }
+        break
+      }
+      boat = moveW.Jail(boat, dice,freeParking)[[1]]
+      didMove=boat$currentSpot
+      squares=space.counter(boat,squares)
+      if(incorporateMoney){
+          freeParking=moveW.Jail(boat, dice,freeParking)[[2]]
+        }
+        boat=spaceAction(boat,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(boat,freeParking,chanceDeck,comDeck)[[2]]
+        }
+      if(didMove!=boat$currentSpot){
+          squares = space.counter(boat, squares)
+        }
+    }
+    boat$rolls = 0
+    }
+    #CAR PLAYER
+    if(car$money>0){
+    repeat {
+      dice = roll()
+      dub = dub.check(dice)
+      car$rolls = car$rolls + 1
+      
+      if (dub == 0) {
+        car = moveW.Jail(car, dice,freeParking)[[1]]
+        didMove=car$currentSpot
+        squares=space.counter(car,squares)
+        if(incorporateMoney){
+          freeParking=moveW.Jail(car, dice,freeParking)[[2]]
+        }
+        car=spaceAction(car,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(car,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=car$currentSpot){
+          squares = space.counter(car, squares)
+        }
+        break
+      }
+      if (car$rolls == 3 & dub == 1) {
+        if(car$com.jailFree==TRUE){
+        car$currentSpot=11
+        car$inJail=0
+        car$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(car$chance.jailFree==TRUE){
+        car$currentSpot=11
+        car$inJail=0
+        car$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+        else{
+          car$inJail = 1
+          car$currentSpot = 11
+          squares = space.counter(car, squares) 
+        }
+        break
+      }
+      else if (car$rolls == 3 & dub == 0) {
+        car = moveW.Jail(car, dice,freeParking)[[1]]
+        didMove=car$currentSpot
+        squares=space.counter(car,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(car, dice,freeParking)[[2]]
+        }
+        car=spaceAction(car,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(car,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=car$currentSpot){
+          squares = space.counter(car, squares)
+        }
+        break
+      }
+      car = moveW.Jail(car, dice,freeParking)[[1]]
+      didMove=car$currentSpot
+      squares=space.counter(car,squares)
+      
+      if(incorporateMoney){
+          freeParking=moveW.Jail(car, dice,freeParking)[[2]]
+        }
+        car=spaceAction(car,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(car,freeParking,chanceDeck,comDeck)[[2]]
+        }
+      if(didMove!=car$currentSpot){
+          squares = space.counter(car, squares)
+        }
+    }
+    car$rolls = 0
+    }
+    #DOG PLAYER
+    if(dog$money>0){
+    repeat {
+      dice = roll()
+      dub = dub.check(dice)
+      dog$rolls = dog$rolls + 1
+      
+      if (dub == 0) {
+        dog = moveW.Jail(dog, dice,freeParking)[[1]]
+        didMove=dog$currentSpot
+        squares=space.counter(dog,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(dog, dice,freeParking)[[2]]
+        }
+        dog=spaceAction(dog,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(dog,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=dog$currentSpot){
+          squares = space.counter(dog, squares)
+        }
+        break
+      }
+      if (dog$rolls == 3 & dub == 1) {
+        if(shoe$com.jailFree==TRUE){
+        shoe$currentSpot=11
+        shoe$inJail=0
+        shoe$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(shoe$chance.jailFree==TRUE){
+        shoe$currentSpot=11
+        shoe$inJail=0
+        shoe$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+        else{
+          dog$inJail = 1
+          dog$currentSpot = 11
+          squares = space.counter(dog, squares) 
+        }
+        break
+      }
+      else if (dog$rolls == 3 & dub == 0) {
+        dog = moveW.Jail(dog, dice,freeParking)[[1]]
+        didMove=dog$currentSpot
+        squares=space.counter(dog,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(dog, dice,freeParking)[[2]]
+        }
+        dog=spaceAction(dog,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(dog,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=dog$currentSpot){
+          squares = space.counter(dog, squares)
+        }
+        break
+      }
+      dog = moveW.Jail(dog, dice,freeParking)[[1]]
+      didMove=dog$currentSpot
+      squares=space.counter(dog,squares)
+        
+      if(incorporateMoney){
+          freeParking=moveW.Jail(dog, dice,freeParking)[[2]]
+        }
+        dog=spaceAction(dog,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(dog,freeParking,chanceDeck,comDeck)[[2]]
+        }
+      if(didMove!=dog$currentSpot){
+          squares = space.counter(dog, squares)
+        }
+    }
+    dog$rolls = 0
+  }
+    #SHOE PLAYER
+    if(shoe$money>0){
+    repeat {
+      dice = roll()
+      dub = dub.check(dice)
+      shoe$rolls = shoe$rolls + 1
+      
+      if (dub == 0) {
+        shoe = moveW.Jail(shoe, dice,freeParking)[[1]]
+        didMove=shoe$currentSpot
+        squares=space.counter(shoe,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(shoe, dice,freeParking)[[2]]
+        }
+        shoe=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=shoe$currentSpot){
+          squares = space.counter(shoe, squares)
+        }
+        break
+      }
+      if (shoe$rolls == 3 & dub == 1) {
+        if(shoe$com.jailFree==TRUE){
+        shoe$currentSpot=11
+        shoe$inJail=0
+        shoe$com.jailFree=FALSE
+        comDeck=add_row(comDeck,comChest.cards="jailFree",position=17)
+      }
+      else if(shoe$chance.jailFree==TRUE){
+        shoe$currentSpot=11
+        shoe$inJail=0
+        shoe$chance.jailFree=FALSE
+        chanceDeck=add_row(chance,chance.cards="jailFree",position=17)
+      }
+        else{
+          shoe$inJail = 1
+          shoe$currentSpot = 11
+          squares = space.counter(shoe, squares) 
+        }
+        break
+      }
+      else if (shoe$rolls == 3 & dub == 0) {
+        shoe = moveW.Jail(shoe, dice,freeParking)[[1]]
+        didMove=shoe$currentSpot
+        squares=space.counter(shoe,squares)
+        
+        if(incorporateMoney){
+          freeParking=moveW.Jail(shoe, dice,freeParking)[[2]]
+        }
+        shoe=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[2]]
+        }
+        if(didMove!=shoe$currentSpot){
+          squares = space.counter(shoe, squares)
+        }
+        break
+      }
+      shoe = moveW.Jail(shoe, dice,freeParking)[[1]]
+      didMove=shoe$currentSpot
+      squares=space.counter(shoe,squares)
+        
+      if(incorporateMoney){
+          freeParking=moveW.Jail(shoe, dice,freeParking)[[2]]
+        }
+        shoe=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[1]]
+        if(incorporateMoney){
+          freeParking=spaceAction(shoe,freeParking,chanceDeck,comDeck)[[2]]
+        }
+      if(didMove!=shoe$currentSpot){
+          squares = space.counter(shoe, squares)
+        }
+    }
+    shoe$rolls = 0
+    }
+    
+    game.round = game.round + 1
+  }
+  return(list(squares$lands,game.round))
+}
+```
+
+# Runs Game with Jail
+
+```{r}
+#Incorporates jail into the game and runs our gameplay function. It simulates 10 games, keeping track of how many times a space is landed on with the spaceMaster data frame, and resets player profiles and the squares data frame between each game.
+incorporateJail=TRUE
+games=0
+
+repeat{
+  if(games==10){break}
+  singleGame=gamePlay(squares,boat,car,dog,shoe)
+  spaceMaster$lands=spaceMaster$lands+singleGame[[1]]
+  
+  squares$lands=0
+  boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+  car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+  dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+  shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+  
+  games=games+1
+}
+```
+
+## Visualizations for Game with Jail
+```{r}
+#COLORS PROPORTIONS
+total.lands=sum(spaceMaster$lands)
+
+colorProp=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+
+#PROPERTY PROPORTIONS
+propertyProp=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+#COLORS GRAPH
+color.visual=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+color.visual$estates=factor(color.visual$estates, levels = color.visual$estates)
+
+ggplot(color.visual,aes(x=estates,y=total))+
+  geom_segment(aes(x=estates,y=0,xend=estates,yend=total))+
+  geom_point()+coord_flip()+labs(x="Colors Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Color", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")
+
+#PROPERTIES GRAPH
+prop.visual=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+prop.visual$spaces=factor(prop.visual$spaces, levels=prop.visual$spaces)
+
+ggplot(prop.visual,aes(x=spaces,y=total))+
+  geom_segment(aes(x=spaces,y=0,xend=spaces,yend=total),color=ifelse(prop.visual$spaces%in%c("Community Chest","Chance","Jail"),"red","Black"),size=ifelse(prop.visual$spaces %in% c("Community Chest","Chance","Jail"),1.3,0.7))+
+  geom_point(color=ifelse(prop.visual$spaces%in%c("Community Chest","Chance","Jail"),"red","Black"),size=ifelse(prop.visual$spaces %in% c("Community Chest","Chance","Jail"),3,1))+coord_flip()+labs(x="Property Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Property", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")
+```
+
+#Runs Game with Cards & Jail
+```{r}
+incorporateJail=TRUE
+incorporateCards=TRUE
+
+spaceMaster$lands=0
+games=0
+
+repeat{
+  if(games==10){break}
+  singleGame=gamePlay(squares,boat,car,dog,shoe)
+  spaceMaster$lands=spaceMaster$lands+singleGame[[1]]
+  
+  squares$lands=0
+  boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+  car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+  dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+  shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+  
+  games=games+1
+}
+```
+
+## Visualizations for Game with Cards and Jail
+```{r eval=FALSE, include=FALSE}
+#COLORS PROPORTIONS
+total.lands=sum(spaceMaster$lands)
+
+colorProp=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+
+#PROPERTY PROPORTIONS
+propertyProp=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+#COLORS GRAPH
+color.visual=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+color.visual$estates=factor(color.visual$estates, levels = color.visual$estates)
+
+ggplot(color.visual,aes(x=estates,y=total))+
+  geom_segment(aes(x=estates,y=0,xend=estates,yend=total))+
+  geom_point()+coord_flip()+labs(x="Colors Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Color", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")+scale_y_continuous(breaks=seq(0, 140000, 10000))+theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+#PROPERTIES GRAPH
+prop.visual=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+prop.visual$spaces=factor(prop.visual$spaces, levels=prop.visual$spaces)
+
+ggplot(prop.visual,aes(x=spaces,y=total))+
+  geom_segment(aes(x=spaces,y=0,xend=spaces,yend=total))+
+  geom_point()+coord_flip()+labs(x="Property Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Property", subtitle = "Counts are totaled over 10 games with 10,000 rounds per player, per game.")+scale_y_continuous(breaks=seq(0, 140000, 10000))+theme(axis.text.x = element_text(angle = 45,hjust = 1))
+```
+
+# Runs Game with Jail, Doubles, Cards, Money, and players play to win.
+```{r}
+incorporateJail=TRUE
+incorporateCards=TRUE
+incorporateMoney=TRUE
+playToWin=TRUE
+
+squares$lands=0
+spaceMaster$lands=0
+games=10
+roundsPerGame=vector(mode="numeric",length = games)
+
+squares$lands=0
+
+for (i in 1:10) {
+  boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+  car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+  dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+  shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+  
+  singleGame=gamePlay(squares,boat,car,dog,shoe)
+  spaceMaster$lands=spaceMaster$lands+singleGame[[1]]
+  roundsPerGame[i]=singleGame[[2]]
+}
+```
+
+## Visualtizations
+```{r}
+#COLORS PROPORTIONS
+total.lands=sum(spaceMaster$lands)
+
+colorProp=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+
+#PROPERTY PROPORTIONS
+propertyProp=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+#COLORS GRAPH
+color.visual=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+color.visual$estates=factor(color.visual$estates, levels = color.visual$estates)
+
+ggplot(color.visual,aes(x=estates,y=total))+
+  geom_segment(aes(x=estates,y=0,xend=estates,yend=total))+
+  geom_point()+coord_flip()+labs(x="Colors Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Color", subtitle = "Counts are totaled over 10 games. Avg. Rounds per Game was 266.9 rounds")+scale_y_continuous(breaks=seq(0, 3500, 500))
+
+#PROPERTIES GRAPH
+prop.visual=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+prop.visual$spaces=factor(prop.visual$spaces, levels=prop.visual$spaces)
+
+ggplot(prop.visual,aes(x=spaces,y=total))+
+  geom_segment(aes(x=spaces,y=0,xend=spaces,yend=total))+
+  geom_point()+coord_flip()+labs(x="Property Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Property", subtitle = "Counts are totaled over 10 games. Avg. Rounds per Game was 266.9 rounds")+scale_y_continuous(breaks=seq(0, 3500, 500))
+```
+
+#Runs Game with Jail, Doubles, Cards, Money, playing to win, and Free Parking
+```{r}
+incorporateJail=TRUE
+incorporateCards=TRUE
+incorporateMoney=TRUE
+incorporateFreeParking=TRUE
+playToWin=TRUE
+
+squares$lands=0
+spaceMaster$lands=0
+roundsGame.Rules=vector(mode="numeric",length = games)
+
+squares$lands=0
+
+for (i in 1:10) {
+  boat[,c(2,3,7)]=0;boat[,4:5]=FALSE;boat$currentSpot=1;boat$money=money
+  car[,c(2,3,7)]=0;car[,4:5]=FALSE;car$currentSpot=1;car$money=money
+  dog[,c(2,3,7)]=0;dog[,4:5]=FALSE;dog$currentSpot=1;dog$money=money
+  shoe[,c(2,3,7)]=0;shoe[,4:5]=FALSE;shoe$currentSpot=1;shoe$money=money
+  
+  singleGame=gamePlay(squares,boat,car,dog,shoe)
+  spaceMaster$lands=spaceMaster$lands+singleGame[[1]]
+  roundsGame.Rules[i]=singleGame[[2]]
+}
+
+```
+
+## Visualizations for the full game
+```{r}
+#COLORS PROPORTIONS
+total.lands=sum(spaceMaster$lands)
+
+colorProp=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+
+#PROPERTY PROPORTIONS
+propertyProp=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(prop.land=sum(lands)/total.lands)%>%
+  arrange(desc(prop.land))
+
+#COLORS GRAPH
+color.visual=spaceMaster%>%
+  select(estates,lands)%>%
+  group_by(estates)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+color.visual$estates=factor(color.visual$estates, levels = color.visual$estates)
+
+ggplot(color.visual,aes(x=estates,y=total))+
+  geom_segment(aes(x=estates,y=0,xend=estates,yend=total))+
+  geom_point()+coord_flip()+labs(x="Colors Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Color", subtitle = "Counts are totaled over 10 games. Avg. Rounds per Game was 747.3 rounds")+scale_y_continuous(breaks=seq(0, 8000, 500))+theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+#PROPERTIES GRAPH
+prop.visual=spaceMaster%>%
+  select(spaces,lands)%>%
+  group_by(spaces)%>%
+  summarise(total=sum(lands))%>%
+  arrange(total)
+prop.visual$spaces=factor(prop.visual$spaces, levels=prop.visual$spaces)
+
+ggplot(prop.visual,aes(x=spaces,y=total))+
+  geom_segment(aes(x=spaces,y=0,xend=spaces,yend=total))+
+  geom_point()+coord_flip()+labs(x="Property Spaces", y="Total Lands",title = "Total Amount of Times Players Landed on Property", subtitle = "Counts are totaled over 10 games. Avg. Rounds per Game was 747.3 rounds")+scale_y_continuous(breaks=seq(0, 8000, 500))+theme(axis.text.x = element_text(angle = 45,hjust = 1))
+```
